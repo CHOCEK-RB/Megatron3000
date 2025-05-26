@@ -1,0 +1,116 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-Wall",
+      "-Wextra",
+      "-std=c++17",
+      "-Iinclude",
+      "-g",
+      "-O0",
+      "-DDEBUG",
+      "-c",
+      "-o",
+      "build/obj/head.o",
+      "src/head.cpp"
+    ],
+    "directory": "/home/CHOCEK/Downloads/Codes/Semestre_5/BD2/BD-II/Megatron/v3",
+    "file": "/home/CHOCEK/Downloads/Codes/Semestre_5/BD2/BD-II/Megatron/v3/src/head.cpp",
+    "output": "/home/CHOCEK/Downloads/Codes/Semestre_5/BD2/BD-II/Megatron/v3/build/obj/head.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-Wall",
+      "-Wextra",
+      "-std=c++17",
+      "-Iinclude",
+      "-g",
+      "-O0",
+      "-DDEBUG",
+      "-c",
+      "-o",
+      "build/obj/const.o",
+      "src/const.cpp"
+    ],
+    "directory": "/home/CHOCEK/Downloads/Codes/Semestre_5/BD2/BD-II/Megatron/v3",
+    "file": "/home/CHOCEK/Downloads/Codes/Semestre_5/BD2/BD-II/Megatron/v3/src/const.cpp",
+    "output": "/home/CHOCEK/Downloads/Codes/Semestre_5/BD2/BD-II/Megatron/v3/build/obj/const.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-Wall",
+      "-Wextra",
+      "-std=c++17",
+      "-Iinclude",
+      "-g",
+      "-O0",
+      "-DDEBUG",
+      "-c",
+      "-o",
+      "build/obj/diskController.o",
+      "src/diskController.cpp"
+    ],
+    "directory": "/home/CHOCEK/Downloads/Codes/Semestre_5/BD2/BD-II/Megatron/v3",
+    "file": "/home/CHOCEK/Downloads/Codes/Semestre_5/BD2/BD-II/Megatron/v3/src/diskController.cpp",
+    "output": "/home/CHOCEK/Downloads/Codes/Semestre_5/BD2/BD-II/Megatron/v3/build/obj/diskController.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-Wall",
+      "-Wextra",
+      "-std=c++17",
+      "-Iinclude",
+      "-g",
+      "-O0",
+      "-DDEBUG",
+      "-c",
+      "-o",
+      "build/obj/main.o",
+      "src/main.cpp"
+    ],
+    "directory": "/home/CHOCEK/Downloads/Codes/Semestre_5/BD2/BD-II/Megatron/v3",
+    "file": "/home/CHOCEK/Downloads/Codes/Semestre_5/BD2/BD-II/Megatron/v3/src/main.cpp",
+    "output": "/home/CHOCEK/Downloads/Codes/Semestre_5/BD2/BD-II/Megatron/v3/build/obj/main.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-Wall",
+      "-Wextra",
+      "-std=c++17",
+      "-Iinclude",
+      "-g",
+      "-O0",
+      "-DDEBUG",
+      "-c",
+      "-o",
+      "build/obj/megatron.o",
+      "src/megatron.cpp"
+    ],
+    "directory": "/home/CHOCEK/Downloads/Codes/Semestre_5/BD2/BD-II/Megatron/v3",
+    "file": "/home/CHOCEK/Downloads/Codes/Semestre_5/BD2/BD-II/Megatron/v3/src/megatron.cpp",
+    "output": "/home/CHOCEK/Downloads/Codes/Semestre_5/BD2/BD-II/Megatron/v3/build/obj/megatron.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-Wall",
+      "-Wextra",
+      "-std=c++17",
+      "-Iinclude",
+      "-g",
+      "-O0",
+      "-DDEBUG",
+      "-c",
+      "-o",
+      "build/obj/utils.o",
+      "src/utils.cpp"
+    ],
+    "directory": "/home/CHOCEK/Downloads/Codes/Semestre_5/BD2/BD-II/Megatron/v3",
+    "file": "/home/CHOCEK/Downloads/Codes/Semestre_5/BD2/BD-II/Megatron/v3/src/utils.cpp",
+    "output": "/home/CHOCEK/Downloads/Codes/Semestre_5/BD2/BD-II/Megatron/v3/build/obj/utils.o"
+  }
+]
