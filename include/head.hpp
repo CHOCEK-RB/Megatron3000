@@ -3,14 +3,14 @@
 
 class Head {
 public:
-  int currentDisk;
-  int currentSurface;
-  int currentTrack;
-  int currentSector;
-
+  unsigned int currentDisk;
+  unsigned int currentSurface;
+  unsigned int currentTrack;
+  unsigned int currentSector;
+  unsigned int currentBlock;
   int currentFd;
 
-  Head() : currentDisk(0), currentSurface(0), currentTrack(0), currentSector(0) {};
+  Head() : currentDisk(0), currentSurface(0), currentTrack(0), currentSector(0), currentBlock(0) {};
 
   void moveTo(int disk, int surface, int track, int sector);
 

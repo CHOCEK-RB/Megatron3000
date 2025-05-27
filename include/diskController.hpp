@@ -7,11 +7,11 @@
 
 class DiskController {
 public:
-  int numberDisks;
-  int numberTracks;
-  int numberSectors;
-  int numberBytes;
-  int sectorsBlock;
+  unsigned int numberDisks;
+  unsigned int numberTracks;
+  unsigned int numberSectors;
+  unsigned int numberBytes;
+  unsigned int sectorsBlock;
 
   Head *head;
 
@@ -24,9 +24,12 @@ public:
   void nextDisk();
 
   void moveToBlock(uint32_t blockID);
-  
-  void initializeBootSector();
+  void nextBlockFree(bool consecutive = false);
 
+  void contructDisk();
+  void describeStructure();
+
+  void initializeBootSector();
   void initializeFAT();
   void writeFATEntry(uint32_t sectorID, uint32_t nextSectorID);
   uint32_t readFATEntry(uint32_t sectorID);
