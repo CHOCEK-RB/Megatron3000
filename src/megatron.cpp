@@ -124,45 +124,7 @@ void Megatron::buildStructure() {
       }
     }
   }
-
-  initializeBootSector(
-      numberDisks, numberTracks, numberSectors, numberBytes, sectorsBlock);
-}
-
-void Megatron::initializeBootSector(unsigned int numberDisks,
-                                    unsigned int numberTracks,
-                                    unsigned int numberSectors,
-                                    unsigned int numberBytes,
-                                    unsigned int sectorsBlock) {
+  
   diskController = new DiskController(
       numberDisks, numberTracks, numberSectors, numberBytes, sectorsBlock);
-
-  diskController->head->resetPosition();
-  diskController->head->openCurrentSectorFD();
-
-  // 4 bytes: número de discos
-  diskController->writeBinary(numberDisks);
-  // 4 bytes: pistas por superficie
-  diskController->writeBinary(numberTracks);
-  // 4 bytes: sectores por pista
-  diskController->writeBinary(numberSectors);
-  // 4 bytes: bytes por sector
-  diskController->writeBinary(numberBytes);
-  // 4 bytes: sectores por bloque
-  diskController->writeBinary(sectorsBlock);
-
-  // 2 bytes: bloque de inicio para FAT (después del boot = bloque 1)
-  uint16_t fatBlockStart = 1;
-  diskController->writeBinary(fatBlockStart);
-
-  // 2 bytes: bloque de inicio para metadatos (después de FAT = bloque 2)
-  uint16_t metaBlockStart = 2;
-  diskController->writeBinary(metaBlockStart);
-
-  // 2 bytes: bloque de inicio para datos reales (después de metadatos = bloque 3)
-  uint16_t dataBlockStart = 3;
-  diskController->writeBinary(dataBlockStart);
-
-  // 1 byte: tipo de atributos (0 = estáticos, 1 = variados)
-  diskController->writeBinary(uint8_t(0));
 }

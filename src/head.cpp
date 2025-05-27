@@ -2,16 +2,26 @@
 #include <fcntl.h>
 #include <head.hpp>
 #include <iostream>
+#include <unistd.h>
 #include <utils.hpp>
 
 void Head::moveTo(int disk, int surface, int track, int sector) {
+  if (currentDisk == disk && currentSurface == surface && currentTrack == track && currentSector == sector)
+    return;
+  
   currentDisk = disk;
   currentSurface = surface;
   currentTrack = track;
   currentSector = sector;
+
+  close(currentFd);
+  currentFd = -1;
 }
 
 int Head::openCurrentSectorFD() {
+  if (currentFd != -1)
+    return currentFd;
+
   char fullPath[SIZE_FULL_PATH];
 
   utils::createFullPath(
@@ -28,4 +38,9 @@ int Head::openCurrentSectorFD() {
 
 void Head::resetPosition() {
   currentDisk = currentSurface = currentTrack = currentSector = 0;
+
+  if(currentFd != -1){
+    close(currentFd);
+    currentFd = -1;
+  }
 }

@@ -18,15 +18,14 @@ public:
   DiskController(int numberDisks, int numberTracks, int numberSectors, int numberBytes, int sectorsBlock);
   ~DiskController();
 
-  void moveHeadTo(int disk, int surface, int track, int sector);
-  void advanceHead();
-
   void nextSector();
   void nextTrack();
   void nextSurface();
   void nextDisk();
 
   void moveToBlock(uint32_t blockID);
+  
+  void initializeBootSector();
 
   void initializeFAT();
   void writeFATEntry(uint32_t sectorID, uint32_t nextSectorID);

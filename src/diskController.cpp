@@ -1,6 +1,8 @@
+#include <cmath>
 #include <cstdint>
 #include <diskController.hpp>
 #include <head.hpp>
+#include "const.cpp"
 #include <unistd.h>
 
 DiskController::DiskController(int numberDisks,
@@ -15,18 +17,6 @@ DiskController::DiskController(int numberDisks,
 };
 
 DiskController::~DiskController() { delete head; }
-
-void DiskController::moveHeadTo(int disk, int surface, int track, int sector) {
-  if (head->currentFd != -1) {
-    close(head->currentFd);
-    head->currentFd = -1;
-  }
-
-  head->moveTo(disk % numberDisks,
-               surface % 2,
-               track % numberTracks,
-               sector % numberSectors);
-}
 
 void DiskController::nextSector() {
   head->currentSector++;
@@ -83,22 +73,53 @@ void DiskController::moveToBlock(uint32_t blockID) {
   head->openCurrentSectorFD();
 }
 
+void DiskController::initializeBootSector() {
+
+  head->resetPosition();
+  head->openCurrentSectorFD();
+
+  // 4 bytes: número de discos
+  writeBinary(numberDisks);
+  // 4 bytes: pistas por superficie
+  writeBinary(numberTracks);
+  // 4 bytes: sectores por pista
+  writeBinary(numberSectors);
+  // 4 bytes: bytes por sector
+  writeBinary(numberBytes);
+  // 4 bytes: sectores por bloque
+  writeBinary(sectorsBlock);
+
+  // 1 byte: bloque de inicio para FAT
+  uint8_t empty = 0;
+  writeBinary(empty + 1);
+
+  // 1 byte: bloque de inicio para metadatos
+  writeBinary(empty);
+  // 1 byte: bloques que ocupan los metadatos
+  writeBinary(empty);
+
+  // 1 byte: bloque de inicio para datos reales
+  writeBinary(empty);
+
+  // 1 byte: tipo de atributos (0 = estáticos, 1 = variados)
+  writeBinary(empty);
+}
+
 void DiskController::initializeFAT() {
   moveToBlock(1);
 
-  uint32_t blockSize = numberBytes * sectorsBlock;
-  uint32_t entriesPerBlock = blockSize / sizeof(uint32_t);
+  uint16_t entriesPerBlock = (numberBytes * sectorsBlock) / sizeof(uint32_t);
 
   uint32_t totalBlocks =
       numberDisks * 2 * numberTracks * (numberSectors / sectorsBlock);
 
-  uint32_t fatBlocks = (totalBlocks + entriesPerBlock - 1) / entriesPerBlock;
+  uint8_t fatBlocks = ceil(totalBlocks + 0.0 / entriesPerBlock);
 
   // 4 bytes en 0 para bloques libres
   uint32_t empty = 0;
   uint32_t written = 0;
 
-  for (uint32_t b = 0; b < fatBlocks; ++b) {
+  for (uint8_t b = 0; b < fatBlocks; ++b) {
     moveToBlock(1 + b);
     for (uint32_t i = 0; i < entriesPerBlock && written < totalBlocks; ++i) {
       writeBinary(empty);
@@ -107,32 +128,33 @@ void DiskController::initializeFAT() {
   }
 
   head->resetPosition();
+  head->openCurrentSectorFD();
+
+  lseek(head->currentFd, POS_METADATA, SEEK_SET);
+  writeBinary(fatBlocks - 1);
 }
 
 void DiskController::writeFATEntry(uint32_t blockID, uint32_t nextBlockID) {
-    uint32_t blockSize = numberBytes * sectorsBlock;
-    uint32_t entriesPerBlock = blockSize / sizeof(uint32_t);
+  uint32_t entriesPerBlock = (numberBytes * sectorsBlock) / sizeof(uint32_t);
 
-    uint32_t blockOffset = blockID / entriesPerBlock;
-    uint32_t entryOffset = blockID % entriesPerBlock;
+  uint32_t blockOffset = blockID / entriesPerBlock;
+  uint32_t entryOffset = blockID % entriesPerBlock;
 
-    moveToBlock(1 + blockOffset); // FAT empieza en el bloque 1
-    lseek(head->currentFd, entryOffset * sizeof(uint32_t), SEEK_CUR);
-
-    writeBinary(nextBlockID);
+  moveToBlock(1 + blockOffset);
+  lseek(head->currentFd, entryOffset * sizeof(uint32_t), SEEK_CUR);
+  writeBinary(nextBlockID);
 }
 
 uint32_t DiskController::readFATEntry(uint32_t blockID) {
-    uint32_t blockSize = numberBytes * sectorsBlock;
-    uint32_t entriesPerBlock = blockSize / sizeof(uint32_t);
+  uint32_t entriesPerBlock = (numberBytes * sectorsBlock) / sizeof(uint32_t);
 
-    uint32_t blockOffset = blockID / entriesPerBlock;
-    uint32_t entryOffset = blockID % entriesPerBlock;
+  uint32_t blockOffset = blockID / entriesPerBlock;
+  uint32_t entryOffset = blockID % entriesPerBlock;
 
-    moveToBlock(1 + blockOffset); // FAT empieza en el bloque 1
-    lseek(head->currentFd, entryOffset * sizeof(uint32_t), SEEK_CUR);
+  moveToBlock(1 + blockOffset);
+  lseek(head->currentFd, entryOffset * sizeof(uint32_t), SEEK_CUR);
 
-    uint32_t nextBlock;
-    readBinary(nextBlock);
-    return nextBlock;
+  uint32_t nextBlock;
+  readBinary(nextBlock);
+  return nextBlock;
 }
