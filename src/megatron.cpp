@@ -1,5 +1,4 @@
 #include <cstddef>
-#include <cstdint>
 #include <cstring>
 #include <diskController.hpp>
 #include <megatron.hpp>
@@ -19,8 +18,7 @@ void Megatron::init(){
   std::cout << "\tWelcome to Megatron 3000!\n\n";
   std::cout << "% Opciones:\n";
   std::cout << "1) Construir disco\n";
-  std::cout << "2) SELECT\n";
-  std::cout << "3) Salir\n\n";
+  std::cout << "2) Salir\n\n";
 
   int choice;
   std::cout << "Opcion : ";
@@ -56,7 +54,7 @@ void Megatron::buildStructure() {
   std::cout << "& Cantidad de sectores por pista : ";
   std::cin >> numberSectors;
 
-  std::cout << "& Cantidad de bytes por sector : ";
+  std::cout << "& Cantidad de megaBytes por sector : ";
   std::cin >> numberBytes;
 
   std::cout << "& Cantidad de sectores por bloque : ";
@@ -128,5 +126,5 @@ void Megatron::buildStructure() {
   }
   
   diskController = new DiskController(
-      numberDisks, numberTracks, numberSectors, numberBytes, sectorsBlock);
+      numberDisks, numberTracks, numberSectors, numberBytes * 1024 * 1024, sectorsBlock);
 }

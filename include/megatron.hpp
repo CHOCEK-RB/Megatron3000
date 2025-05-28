@@ -14,5 +14,8 @@ public:
   void init();
 
   void buildStructure();
+
+  void readCSV(int lines = -1);
+  void generateSchema();
 };
 #endif

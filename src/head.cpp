@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include <utils.hpp>
 
-void Head::moveTo(int disk, int surface, int track, int sector) {
+void Head::moveTo(unsigned int disk, unsigned int surface, unsigned int track, unsigned int sector) {
   if (currentDisk == disk && currentSurface == surface && currentTrack == track && currentSector == sector)
     return;
   
@@ -20,7 +20,7 @@ void Head::moveTo(int disk, int surface, int track, int sector) {
 
 int Head::openCurrentSectorFD() {
   if (currentFd != -1)
-    return currentFd;
+    close (currentFd);
 
   char fullPath[SIZE_FULL_PATH];
 

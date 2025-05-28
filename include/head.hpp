@@ -12,7 +12,7 @@ public:
 
   Head() : currentDisk(0), currentSurface(0), currentTrack(0), currentSector(0), currentBlock(0) {};
 
-  void moveTo(int disk, int surface, int track, int sector);
+  void moveTo(unsigned int disk, unsigned int surface, unsigned int track, unsigned int sector);
 
   int openCurrentSectorFD();
   void resetPosition();
