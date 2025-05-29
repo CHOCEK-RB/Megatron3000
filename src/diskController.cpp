@@ -23,42 +23,59 @@ void DiskController::nextSector() {
   head->currentSector = (head->currentSector + 1) % numberSectors;
 }
 
-void DiskController::nextTrack() {
+bool DiskController::nextTrack() {
+  if (head->currentTrack + 1 >= numberTracks) {
+    return false;
+  }
+
   head->currentTrack++;
-
-  if (head->currentTrack >= numberTracks) {
-    head->currentTrack = -1;
-  }
+  return true;
 }
 
-void DiskController::afterTrack() { head->currentSector--; }
+bool DiskController::afterTrack() {
+  if (head->currentSector - 1 < 0) {
+    return false;
+  }
 
-void DiskController::nextSurface() {
-  head->currentSurface++;
+  head->currentSector--;
+  return true;
+}
 
-  if (head->currentSurface >= 2) {
+bool DiskController::nextSurface() {
+  if (head->currentSurface + 1 >= 2) {
     head->currentSurface = 0;
-    nextDisk();
+    return nextDisk();
   }
+
+  head->currentSurface++;
+  return true;
 }
 
-void DiskController::afterSurface() {
-  head->currentSurface--;
-  if (head->currentSurface < 0) {
+bool DiskController::afterSurface() {
+  if (head->currentSurface - 1 < 0) {
     head->currentSurface = 1;
-    afterDisk();
+    return afterDisk();
   }
+
+  head->currentSurface--;
+  return true;
 }
 
-void DiskController::nextDisk() {
+bool DiskController::nextDisk() {
+  if (head->currentDisk + 1 >= numberDisks)
+    return false;
+
   head->currentDisk++;
-
-  if (head->currentDisk >= numberDisks) {
-    head->currentDisk = -1;
-  }
+  return true;
 }
 
-void DiskController::afterDisk() { head->currentDisk--; }
+bool DiskController::afterDisk() {
+  if (head->currentDisk - 1 < 0)
+    return false;
+
+  head->currentDisk--;
+  return true;
+}
 
 void DiskController::moveToSector(uint32_t sectorID) {
   head->currentDisk = sectorID / (2 * numberTracks * numberSectors);
@@ -69,7 +86,7 @@ void DiskController::moveToSector(uint32_t sectorID) {
   head->currentSector = sectorID % numberSectors;
 }
 
-void DiskController::loadBlocks(uint32_t startSector, uint16_t *block) {
+bool DiskController::loadBlocks(uint32_t startSector, uint16_t *block) {
   uint32_t nextSector = startSector;
 
   for (uint32_t i = 0; i < sectorsBlock; ++i) {
@@ -78,14 +95,20 @@ void DiskController::loadBlocks(uint32_t startSector, uint16_t *block) {
 
     lseek(head->currentFd, -4, SEEK_END);
 
-    readBinary(nextSector);
+    if (readBinary(nextSector) != sizeof(nextSector)) {
+      perror("Error al leer el sector");
+      return false;
+    }
 
     if (nextSector == 0xFFFFFFFF) {
-      for (uint32_t j = i; j < sectorsBlock; ++j) {
-        block[j] = 0xFFFF;      }
-      return;
+      // Rellenar el resto del bloque con 0xFFFF
+      for (uint32_t j = i + 1; j < sectorsBlock; ++j) {
+        block[j] = 0xFFFF;
+      }
+      return true;
     }
   }
+  return true;
 }
 
 void DiskController::describeStructure() {
@@ -127,6 +150,20 @@ void DiskController::describeStructure() {
   }
 }
 
+void DiskController::init() {
+  head->resetPosition();
+  head->openCurrentSectorFD();
+
+  // Inicializar el sector de arranque
+  initializeBootSector();
+
+  // Inicializar el bit map
+  initializeBitMap();
+  markSector(0, true);
+  // Describir la estructura del disco
+  describeStructure();
+}
+
 void DiskController::initializeBootSector() {
   head->resetPosition();
   head->openCurrentSectorFD();
@@ -157,16 +194,22 @@ void DiskController::initializeBootSector() {
 }
 
 void DiskController::initializeBitMap() {
-  uint32_t totalSectors = numberDisks * 2 * numberTracks * numberSectors;
-  uint32_t totalBytes = (totalSectors + 7) / 8;
+  // total sectors = numberDisks * 2 * numberTracks * numberSectors
+  uint32_t totalBytes =
+      ((numberDisks * 2 * numberTracks * numberSectors) + 7) / 8;
+
+  uint32_t sectorsUsed = (totalBytes + numberBytes - 3) / (numberBytes - 4);
+  uint32_t sectorsBitMap[sectorsUsed];
+  uint32_t sector = 1;
 
   uint32_t writtenBytes = 0;
-
   nextSurface();
+  blockBitmap = sectorsBitMap[0] = getSectorID();
   head->openCurrentSectorFD();
 
   while (writtenBytes < totalBytes) {
-    for (uint32_t i = 0; i < numberBytes - 4 && writtenBytes < totalBytes; ++i) {
+    for (uint32_t i = 0; i < numberBytes - 4 && writtenBytes < totalBytes;
+         ++i) {
       uint8_t bitmapByte = 0x00;
       writeBinary(bitmapByte);
       ++writtenBytes;
@@ -176,13 +219,12 @@ void DiskController::initializeBitMap() {
       if (head->currentSurface + 1 < 2 || head->currentDisk + 1 < numberDisks) {
         nextSurface();
 
-        uint32_t nextSector =
-            head->currentDisk * 2 * numberTracks * numberSectors +
-            head->currentSurface * numberTracks * numberSectors +
-            head->currentTrack * numberSectors + head->currentSector + 1;
+        uint32_t nextSector = getSectorID();
 
         writeBinary(nextSector);
         head->openCurrentSectorFD();
+
+        sectorsBitMap[sector] = nextSector;
       } else {
 
         uint32_t nextSector = (head->currentSector + 1) % numberSectors;
@@ -190,46 +232,73 @@ void DiskController::initializeBitMap() {
 
         head->moveTo(0, 0, 0, nextSector);
         head->openCurrentSectorFD();
+
+        sectorsBitMap[sector] = nextSector;
       }
+
+      ++sector;
     } else {
 
       uint32_t nullSector = 0xFFFFFFFF;
       writeBinary(nullSector);
     }
   }
+
+  for (uint32_t i = 0; i < sectorsUsed; ++i) {
+    markSector(sectorsBitMap[i], true);
+  }
 }
 
-
-void DiskController::markSectorUsed(uint32_t sectorID) {
-
+bool DiskController::markSector(uint32_t sectorID, bool used) {
+  // byteIndex: índice del byte en el bitmap
   uint32_t byteIndex = sectorID / 8;
+  // bitPos: posición del bit dentro del byte
   uint8_t bitPos = sectorID % 8;
-
+  // sectorsOffset: índice del sector en el bitmap
   uint32_t sectorOffset = byteIndex / (numberBytes - 4);
+  // byteOffset: indice del byte dentro del sector
   uint32_t byteOffset = byteIndex % (numberBytes - 4);
 
   uint16_t block[sectorsBlock];
 
-  loadBlocks(1, block);
+  for (uint32_t nextSector = blockBitmap, i = 0;
+       i <= sectorOffset / sectorsBlock;
+       ++i) {
 
-  for (uint32_t i = 0; i < sectorOffset; ++i) {
-    if (head->currentSurface + 1 < 2 || head->currentDisk + 1 < numberDisks) {
-      nextSurface();
+    if (i == 0) {
+      if (!loadBlocks(nextSector, block))
+        return false;
     } else {
-      head->moveTo(0, 0, 0, (head->currentSector + 1) % numberSectors);
+
+      head->currentFd = block[sectorsBlock - 1];
+      lseek(head->currentFd, -4, SEEK_END);
+      readBinary(nextSector);
+
+      if (nextSector == 0xFFFFFFFF) {
+        perror("No hay suficientes bloques para marcar el sector como usado.");
+        return false;
+      }
+
+      if (!loadBlocks(nextSector, block))
+        return false;
     }
   }
 
-  head->openCurrentSectorFD();
+  head->currentFd = block[sectorOffset % sectorsBlock];
 
-  // Ir al byte correspondiente dentro del archivo
-  lseek(head->currentFd, byteOffset, SEEK_SET);
+  lseek(head->currentBlock, byteOffset, SEEK_SET);
 
-  // Leer, modificar y escribir el byte
   uint8_t bitmapByte;
   readBinary(bitmapByte);
-  bitmapByte |= (1 << bitPos);
+
+  if (used) {
+    bitmapByte |= (1 << bitPos);
+  } else {
+    bitmapByte &= ~(1 << bitPos);
+  }
+
   lseek(head->currentFd, byteOffset, SEEK_SET);
   writeBinary(bitmapByte);
-}
 
+  return true;
+}

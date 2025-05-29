@@ -16,6 +16,8 @@ public:
 
   int openCurrentSectorFD();
   void resetPosition();
+
+  void setFd(int fd);
 };
 
 #endif // HEAD_HPP

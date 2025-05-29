@@ -27,7 +27,7 @@ int Head::openCurrentSectorFD() {
   utils::createFullPath(
       currentDisk, currentSurface, currentTrack, currentSector, fullPath);
 
-  currentFd = open(fullPath, O_WRONLY, 0644);
+  currentFd = open(fullPath, O_RDWR, 0644);
 
   if (currentFd == -1)
     std::cerr << "No se pudo abrir el sector en la direccion : " << fullPath

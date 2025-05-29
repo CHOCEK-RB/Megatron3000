@@ -13,6 +13,7 @@ else
 endif
 
 # Project structure
+MEGATRON_DIR = megatron
 SRC_DIR = src
 OBJ_DIR = build/obj
 BIN_DIR = build/bin
@@ -62,7 +63,7 @@ $(BIN_DIR) $(OBJ_DIR) $(DEP_DIR):
 
 # Clean
 clean:
-	rm -rf $(OBJ_DIR) $(BIN_DIR) $(DEP_DIR)
+	rm -rf $(OBJ_DIR) $(BIN_DIR) $(DEP_DIR) $(MEGATRON_DIR)
 
 # Run
 run: $(TARGET)

@@ -27,8 +27,7 @@ void Megatron::init(){
   switch (choice) {
   case 1:
     buildStructure();
-    diskController->contructDisk();
-    diskController->describeStructure();
+    diskController->init();
     break;
   case 2:
 

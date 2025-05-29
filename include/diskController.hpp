@@ -2,6 +2,7 @@
 #define DISKCONTROLLER_HPP
 
 #include <cstdint>
+#include <cstdio>
 #include <head.hpp>
 #include <unistd.h>
 
@@ -13,7 +14,7 @@ public:
   unsigned int numberBytes;
   unsigned int sectorsBlock;
 
-  unsigned int blockFAT;
+  unsigned int blockBitmap;
   unsigned int blockMetadata;
 
   Head *head;
@@ -21,43 +22,54 @@ public:
   DiskController(int numberDisks, int numberTracks, int numberSectors, int numberBytes, int sectorsBlock);
   ~DiskController();
 
+  uint32_t getSectorID() const {
+    return head->currentDisk * 2 * numberTracks * numberSectors +
+           head->currentSurface * numberTracks * numberSectors +
+           head->currentTrack * numberSectors + head->currentSector;
+  }
+
   void nextSector();
 
-  void nextTrack();
-  void afterTrack();
+  bool nextTrack();
+  bool afterTrack();
 
-  void nextSurface();
-  void afterSurface();
+  bool nextSurface();
+  bool afterSurface();
 
-  void nextDisk();
-  void afterDisk();
+  bool nextDisk();
+  bool afterDisk();
 
   void nextCylinder();
 
   void moveToSector(uint32_t sectorID);
 
-  void loadBlocks(uint32_t startSector, uint16_t *block);
+  bool loadBlocks(uint32_t startSector, uint16_t *block);
   void describeStructure();
-  
+
   void init();
   void initializeBootSector();
   void initializeBitMap();
   void initializeMetadata();
 
-  void markSectorUsed(uint32_t sectorID);
-  
+  bool markSector(uint32_t sectorID, bool used = true);
+
   template <typename T>
 
-  int writeBinary(const T &content) {
+  int writeBinary(const T &content, int fd = -1) {
+    if (fd != -1) {
+      head->currentFd = fd;
+    }
     return write(head->currentFd, &content, sizeof(T));
   }
 
   template <typename T>
 
-  int readBinary(T &store) {
+  int readBinary(T &store, int fd = -1) {
+    if (fd != -1) {
+      head->currentFd = fd;
+    }
     return read(head->currentFd, &store, sizeof(T));
   }
-
 };
 
 #endif // !DISKCONTROLLER_HPP
