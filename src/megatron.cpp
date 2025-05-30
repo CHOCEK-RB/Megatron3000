@@ -125,5 +125,5 @@ void Megatron::buildStructure() {
   }
   
   diskController = new DiskController(
-      numberDisks, numberTracks, numberSectors, numberBytes * 1024 * 1024, sectorsBlock);
+      numberDisks, numberTracks, numberSectors, numberBytes, sectorsBlock);
 }

@@ -1,6 +1,7 @@
 #ifndef UTILS_HPP
 #define UTILS_HPP
 
+#include <string>
 class utils{
   public:
 
@@ -8,7 +9,7 @@ class utils{
   static int countDigits(int num);
   static void writeInt(int num, char *line, int &pos);
 
-  static void createFullPath(int disk, int superface, int track, int sector, char *fullPath);
+  static std::string createFullPath(int disk, int surface, int track, int sector);
 };
 
 #endif // !UTILS_HPP

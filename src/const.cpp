@@ -9,5 +9,6 @@
 #define POS_TYPE 24
 
 constexpr char PATH[] = "megatron";
+constexpr char PATH_BLOCK[] = "block.txt";
 constexpr int SIZE_FULL_PATH = sizeof(PATH) + 3 * (1 + 10) + 7;
 constexpr int FILE_NAME_LENGTH = 20;

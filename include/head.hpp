@@ -3,21 +3,23 @@
 
 class Head {
 public:
-  unsigned int currentDisk;
-  unsigned int currentSurface;
+  unsigned int numberDisks;
+
   unsigned int currentTrack;
   unsigned int currentSector;
-  unsigned int currentBlock;
-  int currentFd;
+  int *heads;
 
-  Head() : currentDisk(0), currentSurface(0), currentTrack(0), currentSector(0), currentBlock(0) {};
+  Head(int disks) : numberDisks(disks), currentTrack(0), currentSector(0) {
+    heads = new int[disks * 2];
+    for (int i = 0; i < disks * 2; ++i) {
+      heads[i] = -1;
+    }
+  };
 
-  void moveTo(unsigned int disk, unsigned int surface, unsigned int track, unsigned int sector);
+  void moveTo(unsigned int track, unsigned int sector);
 
-  int openCurrentSectorFD();
+  bool openCurrentSectorFD();
   void resetPosition();
-
-  void setFd(int fd);
 };
 
 #endif // HEAD_HPP

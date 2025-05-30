@@ -5,42 +5,46 @@
 #include <unistd.h>
 #include <utils.hpp>
 
-void Head::moveTo(unsigned int disk, unsigned int surface, unsigned int track, unsigned int sector) {
-  if (currentDisk == disk && currentSurface == surface && currentTrack == track && currentSector == sector)
+void Head::moveTo(unsigned int track, unsigned int sector) {
+  if (currentTrack == track && currentSector == sector)
     return;
-  
-  currentDisk = disk;
-  currentSurface = surface;
+
   currentTrack = track;
   currentSector = sector;
 
-  close(currentFd);
-  currentFd = -1;
+  for (size_t i = 0; i < numberDisks; ++i) {
+    if (heads[i] != -1) {
+      close(heads[i]);
+      heads[i] = -1;
+    }
+  }
 }
 
-int Head::openCurrentSectorFD() {
-  if (currentFd != -1)
-    close (currentFd);
+bool Head::openCurrentSectorFD() {
+  for (size_t i = 0; i < numberDisks; ++i) {
+    if (heads[i] != -1) {
+      close(heads[i]);
+      heads[i] = -1;
+    }
+  }
+  // Abrir todos los archivos en el cinlidro actual
+  for (size_t i = 0; i < numberDisks; ++i) {
+    for (int s = 0; s < 2; ++s) {
+      std::string fullPath = utils::createFullPath(i, s, currentTrack, currentSector);
 
-  char fullPath[SIZE_FULL_PATH];
+      int fd = open(fullPath.c_str(), O_RDWR , 0644);
+      if (fd == -1) {
+        std::cerr << "Error opening file: " << fullPath << std::endl;
+        return false;
+      }
 
-  utils::createFullPath(
-      currentDisk, currentSurface, currentTrack, currentSector, fullPath);
-
-  currentFd = open(fullPath, O_RDWR, 0644);
-
-  if (currentFd == -1)
-    std::cerr << "No se pudo abrir el sector en la direccion : " << fullPath
-              << "\n";
-
-  return currentFd;
+      heads[i * 2 + s] = fd;
+    }
+  }
+  return true;
 }
 
 void Head::resetPosition() {
-  currentDisk = currentSurface = currentTrack = currentSector = 0;
-
-  if(currentFd != -1){
-    close(currentFd);
-    currentFd = -1;
-  }
+  currentTrack = 0;
+  currentSector = 0;
 }

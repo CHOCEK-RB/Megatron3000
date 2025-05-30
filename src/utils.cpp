@@ -2,6 +2,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <utils.hpp>
+#include <string>
 
 bool utils::directoryExists(const char *path) {
   struct stat info;
@@ -49,32 +50,10 @@ void utils::writeInt(int num, char *line, int &pos) {
   }
 }
 
-void utils::createFullPath(int disk,
-                           int superface,
-                           int track,
-                           int sector,
-                           char *fullPath) {
-  int pos = 0;
-
-  for (int i = 0; PATH[i]; ++i)
-    fullPath[pos++] = PATH[i];
-  fullPath[pos++] = '/';
-
-  writeInt(disk, fullPath, pos);
-  fullPath[pos++] = '/';
-
-  writeInt(superface, fullPath, pos);
-  fullPath[pos++] = '/';
-
-  writeInt(track, fullPath, pos);
-  fullPath[pos++] = '/';
-
-  writeInt(sector, fullPath, pos);
-
-  fullPath[pos++] = '.';
-  fullPath[pos++] = 'd';
-  fullPath[pos++] = 'a';
-  fullPath[pos++] = 't';
-
-  fullPath[pos++] = '\0';
+std::string utils::createFullPath(int disk, int surface, int track, int sector) {
+  return std::string(PATH) + "/" +
+         std::to_string(disk) + "/" +
+         std::to_string(surface) + "/" +
+         std::to_string(track) + "/" +
+         std::to_string(sector) + ".dat";
 }
