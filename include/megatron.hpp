@@ -17,5 +17,7 @@ public:
 
   void readCSV(int lines = -1);
   void generateSchema();
+
+  void createSchema();
 };
 #endif

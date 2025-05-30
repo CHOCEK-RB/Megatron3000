@@ -5,6 +5,7 @@
 #include <diskController.hpp>
 #include <fcntl.h>
 #include <head.hpp>
+#include <string>
 #include <unistd.h>
 
 DiskController::DiskController(int numberDisks,
@@ -501,8 +502,38 @@ bool DiskController::createFile(const char *fileName) {
         return true;
       }
     }
+
+    int headId = moveToSector(sectorID);
+    writeBinary(0xFFFFFFFF, headId);
+    
   }
 
   perror("No hay espacio en el bloque de metadatos para registrar el archivo");
   return false;
+}
+
+std::string DiskController::searchFile(const char *fileName) {
+  freeBlock();
+  uint32_t nextSector = blockMetadata;
+
+  if (!loadBlocks(nextSector, block))
+    return "";
+
+  for (uint16_t i = 0; i < sectorsBlock; ++i) {
+    Sector &s = block[i];
+    if (!s.isValid)
+      continue;
+
+    for (uint32_t offset = 0; offset + 36 <= s.size - 4; offset += 36) {
+      char name[FILE_NAME_LENGTH + 1] = {0};
+      memcpy(name, s.data + offset, FILE_NAME_LENGTH);
+
+      if (strncmp(name, fileName, FILE_NAME_LENGTH) == 0) {
+        char fileRegister[36];
+        memcpy(fileRegister, s.data + offset, 36);
+        return fileRegister;
+      }
+    }
+  }
+  return "";
 }

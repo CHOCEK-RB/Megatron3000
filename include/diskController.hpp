@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <head.hpp>
+#include <string>
 #include <unistd.h>
 
 struct Sector {
@@ -21,14 +22,14 @@ public:
   unsigned int numberSectors;
   unsigned int numberBytes;
   unsigned int sectorsBlock;
-  
+
   bool loadBitMap;
   unsigned int blockBitmap;
   uint16_t sectorsForBitmap;
 
   unsigned int blockMetadata;
   uint16_t sectorsForMetadata;
-  
+
   Sector *block;
   int sectorsLoaded;
 
@@ -63,6 +64,7 @@ public:
 
   bool markSector(uint32_t sectorID, bool used = true);
   bool createFile(const char *fileName);
+  std::string searchFile(const char *fileName);
 
   template <typename T>
 
@@ -76,7 +78,7 @@ public:
 
   template <typename T>
 
-  int readBinary(T &store, uint16_t headId,int fd = -1) {
+  int readBinary(T &store, uint16_t headId, int fd = -1) {
     if (fd != -1) {
       return read(fd, &store, sizeof(T));
     }

@@ -1,7 +1,10 @@
 #include <cstddef>
+#include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <diskController.hpp>
 #include <megatron.hpp>
+#include <string>
 #include <utils.hpp>
 
 #include <fcntl.h>
@@ -10,6 +13,7 @@
 
 #include "const.cpp"
 #include <iostream>
+#include <vector>
 
 Megatron::~Megatron() { delete diskController; }
 
@@ -127,3 +131,47 @@ void Megatron::buildStructure() {
   diskController = new DiskController(
       numberDisks, numberTracks, numberSectors, numberBytes, sectorsBlock);
 }
+
+void Megatron::createSchema(){
+  std::cin.ignore();
+
+  std::string schemaName;
+  std::cout << "% Ingrese el nombre del esquema : \n";
+  getline(std::cin, schemaName, '#');
+
+  if (schemaName.empty()) {
+    std::cout << "Nombre de esquema invalido.\n";
+    return;
+  }
+  
+  std::string schema = schemaName + utils::inputSchema();
+
+  printf("& Creando esquema: %s\n", schema.c_str());
+
+  if (schema.empty()) {
+    std::cout << "Esquema invalido.\n";
+    return;
+  }
+
+  if (diskController->searchFile("esquema.txt").empty()) {
+    diskController->createFile("esquema.txt");
+  }
+  
+  std::string schemaData = diskController->searchFile("esquema.txt");
+  
+  uint32_t sectorID;
+  off_t freeRegister;
+
+  memcpy(&sectorID, schemaData.data() + 20, sizeof(uint32_t));
+  memcpy(&freeRegister, schemaData.data() + 24, sizeof(off_t));
+
+  uint16_t headId = diskController->moveToSector(sectorID);
+
+  lseek(diskController->head->heads[headId], freeRegister, SEEK_SET);
+
+  for (char c : schema) {
+    diskController->writeBinary(c, headId);
+  }
+
+
+};
