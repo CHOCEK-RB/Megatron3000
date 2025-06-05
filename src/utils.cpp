@@ -73,9 +73,9 @@ std::string utils::inputSchema() {
       continue;
     }
 
-    std::cout << "% Ingrese el tipo del atributo [int | float | char]: ";
+    std::cout << "% Ingrese el tipo del atributo [int | float | varchar]: ";
     std::getline(std::cin, type);
-    if (type != "int" && type != "float" && type != "char") {
+    if (type != "int" && type != "float" && type != "varchar") {
       std::cout << "Tipo inválido.\n";
       continue;
     }

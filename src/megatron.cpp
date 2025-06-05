@@ -141,7 +141,7 @@ void Megatron::buildStructure() {
 
 void Megatron::createSchema() {
   std::cin.ignore();
-  std::string schemaName;
+  std::string schemaName, type;
   std::cout << "\n% Ingrese el nombre del esquema : ";
   getline(std::cin, schemaName, '\n');
 
@@ -150,8 +150,16 @@ void Megatron::createSchema() {
     return;
   }
 
+  std::cout << "% Ingrese el tipo de registro (0 -> fijo, 1 -> varido) ";
+  getline(std::cin, type, '\n');
+
+  if (type.empty() || (type != "0" && type != "1")) {
+    std::cout << "Tipo de dato no valido.\n";
+    return;
+  }
+
   std::string schemaDefinition = utils::inputSchema();
-  std::string fullSchema = schemaName + schemaDefinition;
+  std::string fullSchema = schemaName + schemaDefinition + "#" + type;
 
   if (fullSchema.empty()) {
     std::cout << "Esquema invalido.\n";
