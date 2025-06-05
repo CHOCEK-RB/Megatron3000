@@ -4,15 +4,20 @@
 #include <cstdint>
 #include <cstdio>
 #include <head.hpp>
-#include <string>
 #include <unistd.h>
 
 struct Sector {
   uint8_t *data = nullptr;
   size_t size = 0;
-  int headId = -1;
+  uint32_t sectorID = 0;
   bool modified = false;
   bool isValid = false;
+};
+
+struct SectorInfo {
+  uint32_t headId = -1;
+  uint32_t currentTrack = -1;
+  uint32_t currentSector = -1;
 };
 
 class DiskController {
@@ -24,11 +29,12 @@ public:
   unsigned int sectorsBlock;
 
   bool loadBitMap;
-  unsigned int blockBitmap;
-  uint16_t sectorsForBitmap;
+  uint32_t startSectorBitmap;
+  uint8_t blocksPerBitMap;
 
-  unsigned int blockMetadata;
-  uint16_t sectorsForMetadata;
+  bool loadMetada;
+  uint32_t startSectorMetadata;
+  uint8_t blocksPerMetadata;
 
   Sector *block;
   int sectorsLoaded;
@@ -37,18 +43,23 @@ public:
 
   Head *head;
 
-  DiskController(int numberDisks, int numberTracks, int numberSectors, int numberBytes, int sectorsBlock);
+  DiskController(int numberDisks,
+                 int numberTracks,
+                 int numberSectors,
+                 int numberBytes,
+                 int sectorsBlock);
   ~DiskController();
 
-  uint32_t getSectorID(uint16_t headId, int track = -1, int sector = -1);
-  void nextSector();
-  uint32_t nextSectorFree(uint16_t currentSector, bool consecutive = true);
-
-  bool nextTrack();
-  bool afterTrack();
+  uint32_t getSectorID(uint16_t headId);
+  uint32_t getSectorID(SectorInfo &sector);
+  SectorInfo getSectorInfo(uint32_t sectorID);
+  uint32_t nextSectorFree(Sector *block,
+                          uint16_t currentSector,
+                          bool consecutive = true);
 
   uint16_t moveToSector(uint32_t sectorID);
   uint16_t getHeadId(uint32_t sectorID);
+
   bool isInCurrentCilinder(uint32_t sectorID);
 
   bool loadBlocks(uint32_t startSector, Sector *block);
@@ -62,9 +73,13 @@ public:
   void initializeBitMap();
   void initializeMetadata();
 
+  bool markBlock(Sector *block, uint32_t startSectorBlock, bool used = true);
   bool markSector(uint32_t sectorID, bool used = true);
   bool createFile(const char *fileName);
-  std::string searchFile(const char *fileName);
+  bool modifyMetadata(const char *fileName, uint32_t newMetadata);
+  char *searchFile(const char *fileName);
+
+  void createSchemaFile();
 
   template <typename T>
 

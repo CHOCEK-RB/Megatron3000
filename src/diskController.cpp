@@ -5,7 +5,8 @@
 #include <diskController.hpp>
 #include <fcntl.h>
 #include <head.hpp>
-#include <string>
+
+#include <iostream>
 #include <unistd.h>
 
 DiskController::DiskController(int numberDisks,
@@ -15,42 +16,40 @@ DiskController::DiskController(int numberDisks,
                                int sectorsBlock)
     : numberDisks(numberDisks), numberTracks(numberTracks),
       numberSectors(numberSectors), numberBytes(numberBytes),
-      sectorsBlock(sectorsBlock) {
+      sectorsBlock(sectorsBlock), loadBitMap(false), startSectorBitmap(0),
+      blocksPerBitMap(0), loadMetada(false), startSectorMetadata(0),
+      blocksPerMetadata(0), sectorsLoaded(0) {
 
   head = new Head(numberDisks);
 
   block = new Sector[sectorsBlock];
-  sectorsLoaded = 0;
+  for (unsigned int i = 0; i < sectorsBlock; ++i) {
+    block[i].isValid = false;
+    block[i].data = nullptr;
+  }
 
   fdBlock = open(PATH_BLOCK, O_RDWR | O_CREAT | O_TRUNC, 0644);
-};
+}
 
 DiskController::~DiskController() {
   delete head;
   freeBlock();
   delete[] block;
 }
-
-uint32_t DiskController::getSectorID(uint16_t headId, int track, int sector) {
-  if (track != -1 && sector != -1) {
-    return headId * numberTracks * numberSectors + track * numberSectors +
-           sector;
-  }
-
+// headId representa una superficie en todo el disco
+uint32_t DiskController::getSectorID(uint16_t headId) {
   return headId * numberTracks * numberSectors +
          head->currentTrack * numberSectors + head->currentSector;
 }
 
-void DiskController::nextSector() {
-  head->currentSector = (head->currentSector + 1) % numberSectors;
+uint32_t DiskController::getSectorID(SectorInfo &sector) {
+  return sector.headId * numberTracks * numberSectors +
+         sector.currentTrack * numberSectors + sector.currentSector;
 }
 
-uint32_t DiskController::nextSectorFree(uint16_t currentSector,
+uint32_t DiskController::nextSectorFree(Sector *block,
+                                        uint16_t currentSector,
                                         bool consecutive) {
-  freeBlock();
-  loadBlocks(blockBitmap, block);
-  loadBitMap = true;
-
   if (consecutive) {
     // Verficar desde el cilindro actual hacia adelante
     int surface =
@@ -60,9 +59,10 @@ uint32_t DiskController::nextSectorFree(uint16_t currentSector,
     int sector = currentSector % numberSectors;
 
     for (uint32_t i = track; i < numberTracks; ++i) {
-      for (uint32_t j = sector; j < numberSectors; ++j) {
+      for (uint32_t j = sector; j < numberSectors; j += sectorsBlock) {
         for (uint32_t k = surface; k < numberDisks * 2; ++k) {
-          uint32_t nextSector = getSectorID(k, i, j);
+          SectorInfo sector = {k, i, j};
+          uint32_t nextSector = getSectorID(sector);
 
           uint32_t byteIndex = nextSector / 8;
           uint8_t bitPos = nextSector % 8;
@@ -91,8 +91,9 @@ uint32_t DiskController::nextSectorFree(uint16_t currentSector,
 
   for (uint32_t i = surface; i < numberDisks * 2; ++i) {
     for (uint32_t j = track; j < numberTracks; ++j) {
-      for (uint32_t k = sector; k < numberSectors; ++k) {
-        uint32_t nextSector = getSectorID(i, j, k);
+      for (uint32_t k = sector; k < numberSectors; k += 4) {
+        SectorInfo sector = {i, j, k};
+        uint32_t nextSector = getSectorID(sector);
 
         uint32_t byteIndex = nextSector / 8;
         uint8_t bitPos = nextSector % 8;
@@ -112,24 +113,6 @@ uint32_t DiskController::nextSectorFree(uint16_t currentSector,
   }
 
   return 0xFFFFFFFF;
-}
-
-bool DiskController::nextTrack() {
-  if (head->currentTrack + 1 >= numberTracks) {
-    return false;
-  }
-
-  head->currentTrack++;
-  return true;
-}
-
-bool DiskController::afterTrack() {
-  if (head->currentSector - 1 < 0) {
-    return false;
-  }
-
-  head->currentSector--;
-  return true;
 }
 
 uint16_t DiskController::moveToSector(uint32_t sectorID) {
@@ -152,56 +135,43 @@ uint16_t DiskController::getHeadId(uint32_t sectorID) {
 }
 
 bool DiskController::isInCurrentCilinder(uint32_t sectorID) {
-  uint32_t track = (sectorID / numberSectors) % numberTracks;
+  uint32_t track =
+      (sectorID / numberSectors) % (2 * numberTracks) % numberTracks;
   uint32_t sector = sectorID % numberSectors;
   return head->currentTrack == track && head->currentSector == sector;
 }
 
-bool DiskController::loadBlocks(uint32_t startSector, Sector *block) {
-  if (loadBitMap) {
+// Carga a memoria un bloque, para esto se pone el sector donde inicia
+
+bool DiskController::loadBlocks(uint32_t startSectorID, Sector *block) {
+  if (loadBitMap || loadMetada) {
     loadBitMap = false;
+    loadMetada = false;
   }
 
-  uint32_t nextSector = startSector;
+  sectorsLoaded = 0;
 
-  int headId = moveToSector(nextSector);
-  head->openCurrentSectorFD();
+  uint32_t startSectorBlock = startSectorID % numberSectors;
 
-  for (uint32_t i = 0; i < sectorsBlock; ++i) {
-    if (!isInCurrentCilinder(nextSector)) {
-      if (i == 0)
-        return false;
-      break;
-    }
+  for (uint8_t i = startSectorBlock, j = 0;
+       i < numberSectors && j < sectorsBlock;
+       ++i, ++j) {
+    int headId = moveToSector(startSectorID + j);
+    head->openCurrentSectorFD();
 
-    headId = moveToSector(nextSector);
-
-    Sector &s = block[i];
+    Sector &s = block[j];
     s.data = new uint8_t[numberBytes];
     s.size = read(head->heads[headId], s.data, numberBytes);
-    s.headId = headId;
+    s.sectorID = startSectorID + j;
     s.modified = false;
     s.isValid = true;
 
     sectorsLoaded++;
-
-    lseek(head->heads[headId], -4, SEEK_END);
-
-    if (readBinary(nextSector, headId) != sizeof(nextSector)) {
-      perror("Error al leer el siguiente sector");
-      return false;
-    }
-
-    if (nextSector == 0xFFFFFFFF) {
-      break;
-    }
   }
 
-  for (uint16_t i = 0; i < sectorsBlock; ++i) {
+  for (uint16_t i = 0; i < sectorsLoaded; ++i) {
     Sector &s = block[i];
-    if (s.isValid && s.headId == headId) {
-      write(fdBlock, s.data, s.size);
-    }
+    write(fdBlock, s.data, s.size);
   }
 
   lseek(fdBlock, 0, SEEK_END);
@@ -214,16 +184,20 @@ void DiskController::flushModifiedSectors(Sector *loadedSectors) {
     Sector &s = loadedSectors[i];
     if (!s.isValid)
       continue;
+
     if (s.modified) {
-      lseek(head->heads[s.headId], 0, SEEK_SET);
-      write(head->heads[s.headId], s.data, s.size);
+      uint32_t headId = moveToSector(s.sectorID);
+      head->openCurrentSectorFD();
+      lseek(head->heads[headId], 0, SEEK_SET);
+      write(head->heads[headId], s.data, s.size);
     }
   }
 }
 
 void DiskController::freeBlock() {
-  if (loadBitMap) {
+  if (loadBitMap || loadMetada) {
     loadBitMap = false;
+    loadMetada = false;
   }
 
   for (uint16_t i = 0; i < sectorsBlock; ++i) {
@@ -235,7 +209,7 @@ void DiskController::freeBlock() {
     }
 
     s.size = 0;
-    s.headId = -1;
+    s.sectorID = -1;
     s.modified = false;
     s.isValid = false;
   }
@@ -288,50 +262,36 @@ void DiskController::init() {
 
   // Inicializar el sector de arranque
   initializeBootSector();
-
   // Inicializar el bit map
   initializeBitMap();
-  markSector(0, true);
   // Inicializar el sector de metadatos
   initializeMetadata();
-  // Describir la estructura del disco
-  describeStructure();
 
-  createFile("esquema.txt");
-  createFile("titanic.txt");
-  createFile("nepe.txt");
+  freeBlock();
+  loadBlocks(startSectorBitmap, block);
+
+  markBlock(block, 0);
+  markBlock(block, startSectorBitmap);
+  markBlock(block, startSectorMetadata);
+
+  flushModifiedSectors(block);
+
+  createSchemaFile();
 }
 
 void DiskController::initializeBootSector() {
   head->resetPosition();
   head->openCurrentSectorFD();
 
-  uint32_t h = 1, t = 0, sec = 0;
-  // Es continuo al sector boot en su mismo cilindro
   loadBitMap = false;
-  blockBitmap = getSectorID(1);
-  uint32_t totalBytes =
-      (numberDisks * 2 * numberTracks * numberSectors + 7) / 8;
+  startSectorBitmap = 4;
+  blocksPerBitMap = 1;
 
-  sectorsForBitmap = (totalBytes + numberBytes - 3) / (numberBytes - 4);
+  loadMetada = false;
+  startSectorMetadata = 8;
+  blocksPerMetadata = 0;
 
-  for (int i = 0; i < sectorsForBitmap; ++i) {
-    if (h + 1 < numberDisks * 2) {
-      ++h;
-    } else if (sec + 1 < numberSectors) {
-      ++sec;
-      h = 0;
-    } else if (t + 1 < numberTracks) {
-      ++t;
-      h = 0;
-    }
-  }
-
-  blockMetadata = getSectorID(h, t, sec);
-
-  sectorsForMetadata = 1;
-
-  // 4 bytes: número de discos
+  // 4 bytes: número de platos
   writeBinary(numberDisks, 0);
   // 4 bytes: pistas por superficie
   writeBinary(numberTracks, 0);
@@ -342,111 +302,95 @@ void DiskController::initializeBootSector() {
   // 4 bytes: sectores por bloque
   writeBinary(sectorsBlock, 0);
   // 1 byte: sector de inicio para bit map
-  uint8_t empty = 0;
-  writeBinary(blockBitmap, 0);
-  // 1 byte: número de sectores para bit map
-  writeBinary(sectorsForBitmap, 0);
+  writeBinary(startSectorBitmap, 0);
+  // 1 byte: número de bloque para bit map
+  writeBinary(blocksPerBitMap, 0);
   // 1 byte: sector de inicio para metadatos
-  writeBinary(blockMetadata, 0);
+  writeBinary(startSectorMetadata, 0);
   // 1 byte: número de sectores para metadatos
-  writeBinary(sectorsForMetadata, 0);
-  // 1 byte: tipo de atributos (0 = estáticos, 1 = variados)
-  writeBinary(empty, 0);
+  writeBinary(blocksPerMetadata, 0);
 }
 
 void DiskController::initializeBitMap() {
-  // total sectors = numberDisks * 2 * numberTracks * numberSectors
-  uint32_t totalBytes =
-      ((numberDisks * 2 * numberTracks * numberSectors) + 7) / 8;
-
-  uint32_t sectorsBitMap[sectorsForBitmap];
-  uint32_t sector = 1;
-
+  uint32_t totalSectors = numberDisks * 2 * numberTracks * numberSectors;
+  uint32_t totalBytes = (totalSectors + 7) / 8;
   uint32_t writtenBytes = 0;
-  sectorsBitMap[0] = blockBitmap;
+  uint32_t nextSector = 0xFFFFFFFF;
 
-  uint32_t headId = moveToSector(blockBitmap);
-  head->openCurrentSectorFD();
+  uint32_t currentSector = startSectorBitmap;
 
-  while (writtenBytes < totalBytes) {
-    for (uint32_t i = 0; i < numberBytes - 4 && writtenBytes < totalBytes;
-         ++i) {
-      uint8_t bitmapByte = 0x00;
-      writeBinary(bitmapByte, headId);
-      ++writtenBytes;
+  freeBlock();
+  loadBlocks(currentSector, block);
+
+  for (uint8_t i = 0; i < sectorsLoaded && writtenBytes < totalBytes; ++i) {
+    uint8_t *data = block[i].data;
+    uint16_t j = (i == 0) ? 4 : 0;
+
+    for (; j < numberBytes && writtenBytes < totalBytes; ++j, ++writtenBytes) {
+      data[j] = 0x00;
     }
 
-    if (writtenBytes < totalBytes) {
-      if (headId < numberDisks * 2 * numberTracks - 1) {
-        ++headId;
-        uint32_t nextSector = getSectorID(headId);
-
-        writeBinary(nextSector, headId - 1);
-
-        sectorsBitMap[sector] = nextSector;
-      } else {
-        uint32_t nextSector = (head->currentSector + 1) % numberSectors;
-        writeBinary(nextSector, headId);
-
-        head->moveTo(0, nextSector);
-        head->openCurrentSectorFD();
-
-        sectorsBitMap[sector] = nextSector;
-        headId = 0;
-      }
-
-      ++sector;
-    } else {
-
-      uint32_t nullSector = 0xFFFFFFFF;
-      writeBinary(nullSector, headId);
-    }
+    block[i].size = j;
+    block[i].modified = true;
   }
 
-  for (uint32_t i = 0; i < sectorsForBitmap; ++i) {
-    markSector(sectorsBitMap[i], true);
-  }
+  memcpy(block[0].data, &nextSector, sizeof(nextSector));
+
+  flushModifiedSectors(block);
 }
 
+// se reserva un bloque en un cilindro para metadat
 void DiskController::initializeMetadata() {
-  uint32_t headId = moveToSector(blockMetadata);
-  head->openCurrentSectorFD();
-  // Caso donde metadata ocupa un unico sector
-  for (uint32_t i = 0; i < numberBytes - 4; ++i) {
-    uint8_t empty = 0;
-    writeBinary(empty, headId);
-  }
 
-  uint32_t nullSector = 0xFFFFFFFF;
-  writeBinary(nullSector, headId);
+  loadBlocks(startSectorMetadata, block);
 
-  markSector(blockMetadata, true);
+  uint32_t nextSector = 0xFFFFFFFF;
+  uint32_t writtenRegisters = 0;
+
+  uint32_t maxRegisters =
+      numberBytes * sectorsBlock -
+      SIZE_FIRST_HEADER_METADATA / SIZE_PER_REGISTER_METADATA;
+  uint16_t bytesForBitmap = (maxRegisters + 7) / 8;
+
+  maxRegisters = numberBytes * sectorsBlock -
+                 (SIZE_FIRST_HEADER_METADATA + bytesForBitmap) /
+                     SIZE_PER_REGISTER_METADATA;
+  bytesForBitmap = (maxRegisters + 7) / 8;
+
+  uint32_t offset = SIZE_FIRST_HEADER_METADATA + bytesForBitmap;
+
+  uint8_t *header = new uint8_t[SIZE_FIRST_HEADER_METADATA + bytesForBitmap]{0};
+
+  uint32_t index = 0;
+  memcpy(header + index, &nextSector, sizeof(nextSector));
+  index += sizeof(nextSector);
+  memcpy(header + index, &offset, sizeof(offset));
+  index += sizeof(offset);
+  memcpy(header + index, &maxRegisters, sizeof(maxRegisters));
+  index += sizeof(maxRegisters);
+  memcpy(header + index, &writtenRegisters, sizeof(writtenRegisters));
+  index += sizeof(writtenRegisters);
+
+  memcpy(block[0].data, header, SIZE_FIRST_HEADER_METADATA + bytesForBitmap);
+  block[0].size = SIZE_FIRST_HEADER_METADATA + bytesForBitmap;
+  block[0].modified = true;
+
+  flushModifiedSectors(block);
+  delete[] header;
 }
-
-bool DiskController::markSector(uint32_t sectorID, bool used) {
+bool DiskController::markBlock(Sector *block,
+                               uint32_t startSectorBlock,
+                               bool used) {
   // byteIndex: índice del byte en el bitmap
-  uint32_t byteIndex = sectorID / 8;
+  uint32_t byteIndex = startSectorBlock / 8 + 4;
   // bitPos: posición del bit dentro del byte
-  uint8_t bitPos = sectorID % 8;
+  uint8_t bitPos = startSectorBlock % 8;
   // sectorsOffset: índice del sector en el bitmap
-  uint32_t sectorOffset = byteIndex / (numberBytes - 4);
+  uint32_t sectorOffset = byteIndex / numberBytes;
   // byteOffset: indice del byte dentro del sector
-  uint32_t byteOffset = byteIndex % (numberBytes - 4);
+  uint32_t byteOffset = byteIndex % numberBytes;
 
-  if (!loadBitMap) {
-    // Suponinendo que todo el bitmap está en un bloque
-    freeBlock();
-    loadBlocks(blockBitmap, block);
-  }
-
-  uint32_t posBlock = sectorOffset % sectorsBlock;
-
-  if (!block[posBlock].isValid) {
-    perror("Error: el sector objetivo no está cargado en el bloque\n");
-    return false;
-  }
-
-  uint8_t &bitmapByte = block[posBlock].data[byteOffset];
+  uint8_t &bitmapByte = block[sectorOffset].data[byteOffset + 4];
 
   if (used) {
     bitmapByte |= (1 << bitPos);
@@ -454,86 +398,244 @@ bool DiskController::markSector(uint32_t sectorID, bool used) {
     bitmapByte &= ~(1 << bitPos);
   }
 
-  block[posBlock].modified = true;
-
-  flushModifiedSectors(block);
+  block[sectorOffset].modified = true;
 
   return true;
 }
 
 bool DiskController::createFile(const char *fileName) {
-  char fileRegister[36] = {0};
+  char fileRegister[SIZE_PER_REGISTER_METADATA] = {0};
 
+  // Copiar nombre del archivo al registro
   for (int i = 0; i < FILE_NAME_LENGTH && fileName[i] != '\0'; ++i) {
     fileRegister[i] = fileName[i];
   }
 
-  uint32_t sectorID = nextSectorFree(0, false);
+  // Obtener sector inicial libre
+  freeBlock();
+  loadBlocks(startSectorBitmap, block);
 
-  if (sectorID == 0xFFFFFFFF) {
-    perror("No hay espacio suficiente para crear el archivo");
-    return false;
-  }
-
+  uint32_t startSectorFile = nextSectorFree(block, 0, false);
   uint32_t metadata = 0;
-  memcpy(fileRegister + 20, &sectorID, sizeof(uint32_t));
-  memcpy(fileRegister + 24, &metadata, sizeof(uint32_t));
-  memcpy(fileRegister + 28, &metadata, sizeof(uint32_t));
-  memcpy(fileRegister + 32, &metadata, sizeof(uint32_t));
 
-  if (!markSector(sectorID, true)) {
-    perror("Error al marcar el sector como ocupado");
+  markBlock(block, startSectorFile);
+  flushModifiedSectors(block);
+
+  // Copiar datos de sector inicial y metadata al registro
+  memcpy(fileRegister + FILE_NAME_LENGTH, &startSectorFile, sizeof(uint32_t));
+  memcpy(fileRegister + FILE_NAME_LENGTH + 4, &metadata, sizeof(uint32_t));
+
+  // Cargar bloque de metadatos
+  freeBlock();
+  loadBlocks(startSectorMetadata, block);
+
+  // Leer header
+  Sector &sector = block[0];
+  uint32_t nextSector, offset, maxRegisters, writtenRegisters;
+  memcpy(&nextSector, sector.data, sizeof(uint32_t));
+  memcpy(&offset, sector.data + 4, sizeof(uint32_t));
+  memcpy(&maxRegisters, sector.data + 8, sizeof(uint32_t));
+  memcpy(&writtenRegisters, sector.data + 12, sizeof(uint32_t));
+
+  if (writtenRegisters >= maxRegisters) {
     return false;
   }
 
-  if (!loadBlocks(blockMetadata, block)) {
-    perror("No se pudo cargar el bloque de metadatos");
-    return false;
+  uint32_t bytesUsed = offset + writtenRegisters * SIZE_PER_REGISTER_METADATA;
+  uint32_t sectorIndex = bytesUsed / numberBytes;
+  uint32_t localOffset = bytesUsed % numberBytes;
+
+  Sector &targetSector = block[sectorIndex];
+  uint32_t spaceAvailable = numberBytes - localOffset;
+
+  if (spaceAvailable >= SIZE_PER_REGISTER_METADATA) {
+    // Todo el registro cabe en el sector actual
+    memcpy(targetSector.data + localOffset,
+           fileRegister,
+           SIZE_PER_REGISTER_METADATA);
+    targetSector.modified = true;
+    if (targetSector.size < localOffset + SIZE_PER_REGISTER_METADATA)
+      targetSector.size = localOffset + SIZE_PER_REGISTER_METADATA;
+  } else {
+    uint32_t firstPart = spaceAvailable;
+    uint32_t secondPart = SIZE_PER_REGISTER_METADATA - firstPart;
+
+    memcpy(targetSector.data + localOffset, fileRegister, firstPart);
+    targetSector.modified = true;
+
+    if (targetSector.size < numberBytes)
+      targetSector.size = numberBytes;
+
+    if (sectorIndex + 1 >= sectorsLoaded)
+      return false;
+
+    Sector &next = block[sectorIndex + 1];
+    memcpy(next.data, fileRegister + firstPart, secondPart);
+    next.modified = true;
+    if (next.size < secondPart)
+      next.size = secondPart;
   }
 
-  for (uint16_t i = 0; i < sectorsBlock; ++i) {
-    Sector &s = block[i];
+  // Actualizar contador de registros escritos
+  ++writtenRegisters;
+  memcpy(sector.data + 12, &writtenRegisters, sizeof(uint32_t));
+  sector.modified = true;
 
-    for (uint32_t offset = 0; offset <= numberBytes - 40; offset += 36) {
-      if (s.data[offset] == 0) {
-        memcpy(s.data + offset, fileRegister, 36);
-        s.modified = true;
-        flushModifiedSectors(block);
-        return true;
-      }
+  flushModifiedSectors(block);
+  return true;
+}
+
+char *DiskController::searchFile(const char *fileName) {
+  freeBlock();
+  loadBlocks(startSectorMetadata, block);
+
+  Sector &header = block[0];
+  uint32_t offset, maxRegisters, writtenRegisters;
+  memcpy(&offset, header.data + 4, sizeof(uint32_t));
+  memcpy(&maxRegisters, header.data + 8, sizeof(uint32_t));
+  memcpy(&writtenRegisters, header.data + 12, sizeof(uint32_t));
+
+  uint32_t totalBytes = writtenRegisters * SIZE_PER_REGISTER_METADATA;
+
+  for (uint32_t i = 0; i < totalBytes;) {
+    uint32_t sectorIndex = (offset + i) / numberBytes;
+    uint32_t localOffset = (offset + i) % numberBytes;
+
+    if (sectorIndex >= sectorsLoaded)
+      break;
+
+    Sector &sector = block[sectorIndex];
+
+    uint32_t spaceAvailable = numberBytes - localOffset;
+    uint32_t bytesToRead =
+        std::min(spaceAvailable, (uint32_t)SIZE_PER_REGISTER_METADATA);
+
+    char registerData[SIZE_PER_REGISTER_METADATA] = {0};
+
+    if (bytesToRead == SIZE_PER_REGISTER_METADATA) {
+      memcpy(
+          registerData, sector.data + localOffset, SIZE_PER_REGISTER_METADATA);
+    } else {
+      // Fragmentado entre dos sectores
+      memcpy(registerData, sector.data + localOffset, bytesToRead);
+      if (sectorIndex + 1 >= sectorsLoaded)
+        break;
+
+      Sector &next = block[sectorIndex + 1];
+      memcpy(registerData + bytesToRead,
+             next.data,
+             SIZE_PER_REGISTER_METADATA - bytesToRead);
     }
 
-    int headId = moveToSector(sectorID);
-    writeBinary(0xFFFFFFFF, headId);
-    
+    if (strncmp(registerData, fileName, FILE_NAME_LENGTH) == 0) {
+      char *result = new char[SIZE_PER_REGISTER_METADATA];
+      memcpy(result, registerData, SIZE_PER_REGISTER_METADATA);
+      return result;
+    }
+
+    i += SIZE_PER_REGISTER_METADATA;
   }
 
-  perror("No hay espacio en el bloque de metadatos para registrar el archivo");
+  return nullptr;
+}
+
+bool DiskController::modifyMetadata(const char *fileName,
+                                    uint32_t newMetadata) {
+  freeBlock();
+  loadBlocks(startSectorMetadata, block);
+
+  Sector &header = block[0];
+  uint32_t offset, maxRegisters, writtenRegisters;
+  memcpy(&offset, header.data + 4, sizeof(uint32_t));
+  memcpy(&maxRegisters, header.data + 8, sizeof(uint32_t));
+  memcpy(&writtenRegisters, header.data + 12, sizeof(uint32_t));
+
+  uint32_t totalBytes = writtenRegisters * SIZE_PER_REGISTER_METADATA;
+
+  for (uint32_t i = 0; i < totalBytes;) {
+    uint32_t sectorIndex = (offset + i) / numberBytes;
+    uint32_t localOffset = (offset + i) % numberBytes;
+
+    if (sectorIndex >= sectorsLoaded)
+      break;
+
+    Sector &sector = block[sectorIndex];
+
+    uint32_t spaceAvailable = numberBytes - localOffset;
+    uint32_t bytesToRead =
+        std::min(spaceAvailable, (uint32_t)SIZE_PER_REGISTER_METADATA);
+
+    char registerData[SIZE_PER_REGISTER_METADATA] = {0};
+
+    if (bytesToRead == SIZE_PER_REGISTER_METADATA) {
+      memcpy(
+          registerData, sector.data + localOffset, SIZE_PER_REGISTER_METADATA);
+    } else {
+      if (sectorIndex + 1 >= sectorsLoaded)
+        break;
+      Sector &next = block[sectorIndex + 1];
+      memcpy(registerData, sector.data + localOffset, bytesToRead);
+      memcpy(registerData + bytesToRead,
+             next.data,
+             SIZE_PER_REGISTER_METADATA - bytesToRead);
+    }
+
+    if (strncmp(registerData, fileName, FILE_NAME_LENGTH) == 0) {
+      // Encontrado, escribir los últimos 4 bytes (offset 20)
+      uint32_t metadataOffset = FILE_NAME_LENGTH + 4;
+
+      if (spaceAvailable >= metadataOffset + 4) {
+        memcpy(sector.data + localOffset + metadataOffset,
+               &newMetadata,
+               sizeof(uint32_t));
+        sector.modified = true;
+      } else {
+        // Puede estar dividido en dos sectores
+        uint32_t part1 = numberBytes - (localOffset + metadataOffset);
+        uint32_t part2 = 4 - part1;
+
+        memcpy(sector.data + localOffset + metadataOffset, &newMetadata, part1);
+        sector.modified = true;
+
+        Sector &next = block[sectorIndex + 1];
+        memcpy(next.data, ((uint8_t *)&newMetadata) + part1, part2);
+        next.modified = true;
+      }
+
+      flushModifiedSectors(block);
+      return true;
+    }
+
+    i += SIZE_PER_REGISTER_METADATA;
+  }
+
   return false;
 }
 
-std::string DiskController::searchFile(const char *fileName) {
+void DiskController::createSchemaFile(){
+  char *informationEschema;
+
+  if (createFile("esquema.txt"))
+    informationEschema = searchFile("esquema.txt");
+  else
+    return;
+
+  uint32_t startSectorFile;
+  memcpy(&startSectorFile, informationEschema + FILE_NAME_LENGTH, sizeof(startSectorFile));
+
+  uint32_t nextSector = 0xFFFFFFFF;
+  uint32_t usedBytes = 12;
+  uint32_t freeStorage = numberBytes - 12;
+  
   freeBlock();
-  uint32_t nextSector = blockMetadata;
+  loadBlocks(startSectorFile, block);
 
-  if (!loadBlocks(nextSector, block))
-    return "";
+  memcpy(block[0].data, &nextSector, sizeof(uint32_t));
+  memcpy(block[0].data + 4, &usedBytes, sizeof(uint32_t));
+  memcpy(block[0].data + 8, &freeStorage, sizeof(uint32_t));
+  
+  block[0].size = 12;
+  block[0].modified = true;
 
-  for (uint16_t i = 0; i < sectorsBlock; ++i) {
-    Sector &s = block[i];
-    if (!s.isValid)
-      continue;
-
-    for (uint32_t offset = 0; offset + 36 <= s.size - 4; offset += 36) {
-      char name[FILE_NAME_LENGTH + 1] = {0};
-      memcpy(name, s.data + offset, FILE_NAME_LENGTH);
-
-      if (strncmp(name, fileName, FILE_NAME_LENGTH) == 0) {
-        char fileRegister[36];
-        memcpy(fileRegister, s.data + offset, 36);
-        return fileRegister;
-      }
-    }
-  }
-  return "";
+  flushModifiedSectors(block);
 }

@@ -62,49 +62,38 @@ std::string utils::createFullPath(int disk, int surface, int track, int sector) 
 std::string utils::inputSchema() {
   std::string schema = "";
 
-  while(true){
-    std::string attribute;
+  while (true) {
+    std::string name, type, size;
 
-    std::cout << "% Ingrese el atributo (nombre#tipo#tamaño) o ';' para terminar : \n";
-    getline(std::cin, attribute, '#');
-
-    if (attribute == ";") {
-      break;
-    }
-
-    size_t pos1 = attribute.find('#');
-    if (pos1 == std::string::npos) {
-      std::cout << "Atributo invalido.\n";
-      continue;
-    }
-
-    size_t pos2 = attribute.find('#', pos1 + 1);
-    if (pos2 == std::string::npos) {
-      std::cout << "Atributo invalido.\n";
-      continue;
-    }
-
-    std::string name = attribute.substr(0, pos1);
-    std::string type = attribute.substr(pos1 + 1, pos2);
-    std::string size = attribute.substr(pos2 + 1);
-
+    std::cout << "% Ingrese el nombre del atributo (o ';' para terminar): ";
+    std::getline(std::cin, name);
+    if (name == ";") break;
     if (name.empty()) {
-      std::cout << "Nombre de atributo invalido.\n";
+      std::cout << "Nombre inválido.\n";
       continue;
     }
 
+    std::cout << "% Ingrese el tipo del atributo [int | float | char]: ";
+    std::getline(std::cin, type);
     if (type != "int" && type != "float" && type != "char") {
-      std::cout << "Tipo de atributo invalido. Debe ser 'int', 'float' o 'char'.\n";
+      std::cout << "Tipo inválido.\n";
       continue;
     }
 
-    if (size.empty() || std::stoi(size) <= 0) {
-      std::cout << "Tamaño de atributo invalido. Debe ser un número.\n";
+    std::cout << "% Ingrese el tamaño del atributo (entero > 0): ";
+    std::getline(std::cin, size);
+    try {
+      int sz = std::stoi(size);
+      if (sz <= 0) throw std::invalid_argument("tamaño inválido");
+    } catch (...) {
+      std::cout << "Tamaño inválido.\n";
       continue;
     }
 
+    std::cout << "+ Atributo agregado: " << name << " " << type << "(" << size << ")\n";
     schema += "#" + name + "#" + type + "(" + size + ")";
   }
 
   return schema;
 }
+

@@ -2,6 +2,7 @@
 #define MEGATRON_HPP
 
 #include <diskController.hpp>
+#include <string>
 
 class Megatron {
 
@@ -19,5 +20,6 @@ public:
   void generateSchema();
 
   void createSchema();
+  std::string getSchema(const std::string& name);
 };
 #endif

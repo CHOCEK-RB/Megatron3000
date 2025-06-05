@@ -13,11 +13,10 @@
 
 #include "const.cpp"
 #include <iostream>
-#include <vector>
 
 Megatron::~Megatron() { delete diskController; }
 
-void Megatron::init(){
+void Megatron::init() {
   std::cout << "% Megatron 3000\n";
   std::cout << "\tWelcome to Megatron 3000!\n\n";
   std::cout << "% Opciones:\n";
@@ -31,13 +30,16 @@ void Megatron::init(){
   switch (choice) {
   case 1:
     buildStructure();
+
     diskController->init();
+
+    createSchema();
+
+    std::cout << getSchema("titanic") << '\n';
     break;
   case 2:
-
-  case 3:
     std::cout << "Hasta luego.\n";
-    return;
+    break;
   default:
     std::cout << "Opcion invalida.\n";
     break;
@@ -57,25 +59,21 @@ void Megatron::buildStructure() {
   std::cout << "& Cantidad de sectores por pista : ";
   std::cin >> numberSectors;
 
-  std::cout << "& Cantidad de megaBytes por sector : ";
+  std::cout << "& Cantidad de bytes por sector : ";
   std::cin >> numberBytes;
 
   std::cout << "& Cantidad de sectores por bloque : ";
   std::cin >> sectorsBlock;
 
-  // Eliminar estructura anterior
-  rmdir(PATH);
-  // Crear nuevo PATH
-  mkdir(PATH, 0777);
+  if (mkdir(PATH, 0777) == -1 && errno != EEXIST) {
+    std::cerr << "Error creating base directory: " << PATH << "\n";
+    return;
+  }
 
-  // Calcular el tamaño maximo de la ruta
-  // La cantidad maxima de digitos para un entero positivo normal es 10
-  // (4.294.967.295)
-  char path[sizeof(PATH) + 3 * (1 + 10) + 7];
+  char path[SIZE_FULL_PATH];
 
   for (size_t d = 0; d < numberDisks; ++d) {
     int pos = 0;
-
     for (int i = 0; PATH[i]; ++i)
       path[pos++] = PATH[i];
     path[pos++] = '/';
@@ -83,7 +81,10 @@ void Megatron::buildStructure() {
     utils::writeInt(d, path, pos);
     path[pos] = '\0';
 
-    mkdir(path, 0777);
+    if (mkdir(path, 0777) == -1 && errno != EEXIST) {
+      std::cerr << "Error creating disk directory: " << path << "\n";
+      return;
+    }
 
     for (size_t s = 0; s < 2; ++s) {
       int posS = pos;
@@ -92,7 +93,10 @@ void Megatron::buildStructure() {
       utils::writeInt(s, path, posS);
       path[posS] = '\0';
 
-      mkdir(path, 0777);
+      if (mkdir(path, 0777) == -1 && errno != EEXIST) {
+        std::cerr << "Error creating surface directory: " << path << "\n";
+        return;
+      }
 
       for (size_t t = 0; t < numberTracks; ++t) {
         int posT = posS;
@@ -101,7 +105,10 @@ void Megatron::buildStructure() {
         utils::writeInt(t, path, posT);
         path[posT] = '\0';
 
-        mkdir(path, 0777);
+        if (mkdir(path, 0777) == -1 && errno != EEXIST) {
+          std::cerr << "Error creating track directory: " << path << "\n";
+          return;
+        }
 
         for (size_t sec = 0; sec < numberSectors; ++sec) {
           int posF = posT;
@@ -120,58 +127,214 @@ void Megatron::buildStructure() {
             return;
           }
 
-          char vacio = 0;
-          write(fd, &vacio, 1);
+          uint8_t empty = 0;
+          write(fd, &empty, sizeof(uint8_t));
           close(fd);
         }
       }
     }
   }
-  
+
   diskController = new DiskController(
       numberDisks, numberTracks, numberSectors, numberBytes, sectorsBlock);
 }
 
-void Megatron::createSchema(){
+void Megatron::createSchema() {
   std::cin.ignore();
-
   std::string schemaName;
-  std::cout << "% Ingrese el nombre del esquema : \n";
-  getline(std::cin, schemaName, '#');
+  std::cout << "\n% Ingrese el nombre del esquema : ";
+  getline(std::cin, schemaName, '\n');
 
   if (schemaName.empty()) {
     std::cout << "Nombre de esquema invalido.\n";
     return;
   }
-  
-  std::string schema = schemaName + utils::inputSchema();
 
-  printf("& Creando esquema: %s\n", schema.c_str());
+  std::string schemaDefinition = utils::inputSchema();
+  std::string fullSchema = schemaName + schemaDefinition;
 
-  if (schema.empty()) {
+  if (fullSchema.empty()) {
     std::cout << "Esquema invalido.\n";
     return;
   }
 
-  if (diskController->searchFile("esquema.txt").empty()) {
-    diskController->createFile("esquema.txt");
+  printf("& Creando esquema: %s\n", fullSchema.c_str());
+
+  if (!diskController->createFile(schemaName.c_str())) {
+    std::cout << "No se pudo crear el archivo para el esquema '" << schemaName
+              << "'.\n";
+    return;
   }
-  
-  std::string schemaData = diskController->searchFile("esquema.txt");
-  
+
+  char *info = diskController->searchFile("esquema.txt");
+  if (!info) {
+    std::cout << "No se encontró 'esquema.txt'.\n";
+    return;
+  }
+
   uint32_t sectorID;
-  off_t freeRegister;
+  memcpy(&sectorID, info + FILE_NAME_LENGTH, sizeof(uint32_t));
+  delete[] info;
 
-  memcpy(&sectorID, schemaData.data() + 20, sizeof(uint32_t));
-  memcpy(&freeRegister, schemaData.data() + 24, sizeof(off_t));
+  const char *schemaData = fullSchema.c_str();
+  uint32_t schemaSize = fullSchema.size();
+  uint32_t totalSize = 4 + schemaSize;
 
-  uint16_t headId = diskController->moveToSector(sectorID);
+  while (true) {
+    diskController->freeBlock();
+    diskController->loadBlocks(sectorID, diskController->block);
 
-  lseek(diskController->head->heads[headId], freeRegister, SEEK_SET);
+    Sector &header = diskController->block[0];
+    uint32_t nextSector, usedBytes, freeBytes;
+    memcpy(&nextSector, header.data, sizeof(uint32_t));
+    memcpy(&usedBytes, header.data + 4, sizeof(uint32_t));
+    memcpy(&freeBytes, header.data + 8, sizeof(uint32_t));
 
-  for (char c : schema) {
-    diskController->writeBinary(c, headId);
+    uint32_t totalSize = sizeof(uint32_t) + schemaSize; // nextOffset + esquema
+
+    if (freeBytes >= totalSize) {
+      uint32_t offset = 12;
+      bool first = (usedBytes == 12);
+
+      if (!first) {
+        while (true) {
+          uint32_t nextOffset;
+
+          int si = offset / diskController->numberBytes;
+          int io = offset % diskController->numberBytes;
+
+          memcpy(&nextOffset,
+                 diskController->block[si].data + io,
+                 sizeof(uint32_t));
+
+          if (nextOffset >= usedBytes)
+            break;
+          offset = nextOffset;
+        }
+
+        // Actualizar el último esquema para que apunte al nuevo
+        uint32_t newOffset = usedBytes;
+        int si = offset / diskController->numberBytes;
+        int io = offset % diskController->numberBytes;
+        memcpy(
+            diskController->block[si].data + io, &newOffset, sizeof(uint32_t));
+        diskController->block[si].modified = true;
+      }
+
+      // Escribir offset al siguiente (al final del esquema)
+      uint32_t nextOffset = usedBytes + totalSize;
+      int si = usedBytes / diskController->numberBytes;
+      int io = usedBytes % diskController->numberBytes;
+
+      memcpy(
+          diskController->block[si].data + io, &nextOffset, sizeof(uint32_t));
+
+      // Escribir los datos del esquema justo después
+      uint32_t copied = 0;
+      uint32_t remaining = schemaSize;
+      uint32_t currentOffset = usedBytes + sizeof(uint32_t);
+
+      while (remaining > 0) {
+        int sectorIndex = currentOffset / diskController->numberBytes;
+        int sectorOffset = currentOffset % diskController->numberBytes;
+
+        Sector &s = diskController->block[sectorIndex];
+        uint32_t available = diskController->numberBytes - sectorOffset;
+
+        uint32_t toCopy = std::min(available, remaining);
+        memcpy(s.data + sectorOffset, schemaData + copied, toCopy);
+
+        s.modified = true;
+        s.size = sectorOffset + toCopy;
+
+        copied += toCopy;
+        remaining -= toCopy;
+        currentOffset += toCopy;
+      }
+
+      usedBytes += totalSize;
+      freeBytes -= totalSize;
+
+      memcpy(header.data + 4, &usedBytes, sizeof(uint32_t));
+      memcpy(header.data + 8, &freeBytes, sizeof(uint32_t));
+      header.modified = true;
+
+      diskController->flushModifiedSectors(diskController->block);
+      std::cout << "+ Esquema guardado correctamente.\n";
+      return;
+    }
+  }
+}
+
+std::string Megatron::getSchema(const std::string &targetName) {
+  char *esquemaInfo = diskController->searchFile("esquema.txt");
+  if (!esquemaInfo) {
+    std::cout << "No se encontró 'esquema.txt'.\n";
+    return "";
   }
 
+  uint32_t sectorID;
+  memcpy(&sectorID, esquemaInfo + FILE_NAME_LENGTH, sizeof(uint32_t));
+  delete[] esquemaInfo;
 
-};
+  while (true) {
+    diskController->freeBlock();
+    diskController->loadBlocks(sectorID, diskController->block);
+
+    Sector &header = diskController->block[0];
+    uint32_t nextSector, usedBytes;
+    memcpy(&nextSector, header.data, sizeof(uint32_t));
+    memcpy(&usedBytes, header.data + 4, sizeof(uint32_t));
+
+    uint32_t offset = 12;
+    while (offset < usedBytes) {
+      // Leer offset al siguiente esquema
+      uint32_t nextOffset;
+      int si = offset / diskController->numberBytes;
+      int io = offset % diskController->numberBytes;
+      memcpy(
+          &nextOffset, diskController->block[si].data + io, sizeof(uint32_t));
+
+      // Calcular tamaño de este esquema
+      uint32_t schemaStart = offset + sizeof(uint32_t);
+      uint32_t schemaSize = nextOffset - schemaStart;
+
+      // Leer los datos del esquema
+      std::string schema = "";
+      uint32_t copied = 0;
+      while (copied < schemaSize) {
+        uint32_t absoluteOffset = schemaStart + copied;
+        int sIndex = absoluteOffset / diskController->numberBytes;
+        int sOffset = absoluteOffset % diskController->numberBytes;
+
+        Sector &s = diskController->block[sIndex];
+        uint32_t available = diskController->numberBytes - sOffset;
+        uint32_t toRead = std::min(schemaSize - copied, available);
+
+        for (uint32_t i = 0; i < toRead; ++i) {
+          schema += s.data[sOffset + i];
+        }
+
+        copied += toRead;
+      }
+
+      // Comparar nombre
+      size_t pos = schema.find('#');
+      if (pos != std::string::npos) {
+        std::string name = schema.substr(0, pos);
+        if (name == targetName) {
+          return schema;
+        }
+      }
+
+      offset = nextOffset;
+    }
+
+    if (nextSector == 0xFFFFFFFF)
+      break;
+
+    sectorID = nextSector;
+  }
+
+  return ""; // No se encontró
+}

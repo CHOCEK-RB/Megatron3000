@@ -1,0 +1,8 @@
+# Clang
+.cache/
+
+# Megatron
+megatron/
+
+# Ejecutables
+build/
